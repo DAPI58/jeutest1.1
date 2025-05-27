@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sauve Mazarine face à la ruralité !</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #ccf0ff;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+      max-width: 480px;
+      width: 100%;
+    }
+    #info {
+      font-size: 1rem;
+      margin-bottom: 12px;
+      user-select: none;
+      max-width: 480px;
+      width: 100%;
+    }
+
+    #gameWrapper {
+      display: flex;
+      max-width: 480px;
+      width: 100%;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    canvas {
+      background: #ccf0ff;
+      border: 2px solid #000;
+      display: none;
+      width: 70%;
+      aspect-ratio: 3 / 4;
+      border-radius: 8px;
+      touch-action: none;
+    }
+
+    /* Curseur vertical */
+    #sliderContainer {
+      height: 640px;
+      display: none;
+      width: 20%;
+      max-width: 80px;
+      position: relative;
+      user-select: none;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 640px; /* large because we'll rotate */
+      height: 30px;
+      transform: rotate(-90deg);
+      position: absolute;
+      top: calc(50% - 15px);
+      left: calc(50% - 320px);
+    }
+    /* Slider track */
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      background: #007acc;
+      border-radius: 4px;
+    }
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      background: #007acc;
+      border-radius: 4px;
+    }
+    /* Slider thumb */
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 28px;
+      height: 28px;
+      background: #005fa3;
+      border-radius: 50%;
+      cursor: pointer;
+      margin-top: -10px;
+      border: 2px solid #003f6d;
+      transition: background 0.3s ease;
+    }
+    input[type="range"]:hover::-webkit-slider-thumb {
+      background: #003f6d;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+      background: #005fa3;
+      border-radius: 50%;
+      border: 2px solid #003f6d;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    input[type="range"]:hover::-moz-range-thumb {
+      background: #003f6d;
+    }
+
+    button {
+      font-size: 1.3rem;
+      padding: 12px 20px;
+      margin: 6px 8px;
+      border: none;
+      border-radius: 8px;
+      background: #007acc;
+      color: white;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.3s ease;
+      min-width: 120px;
+      max-width: 480px;
+      width: 100%;
+      max-width: 480px;
+    }
+    button:hover, button:focus {
+      background: #005fa3;
+      outline: none;
+    }
+    #restartBtn {
+      display: none;
+      max-width: 480px;
+    }
+
+    @media (min-width: 500px) {
+      h1 {
+        font-size: 2rem;
+      }
+      #info {
+        font-size: 1.1rem;
+      }
+      button {
+        font-size: 1.4rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Sauve Mazarine face à la ruralité !</h1>
+  <p id="info">Déplacez le curseur vertical pour monter ou descendre Mazarine !</p>
+  <button id="startBtn">Commencer</button>
+
+  <div id="gameWrapper">
+    <canvas id="gameCanvas" width="480" height="640"></canvas>
+    <div id="sliderContainer">
+      <input type="range" id="verticalSlider" min="0" max="600" value="300" step="1" />
+    </div>
+  </div>
+
+  <button id="restartBtn">Rejouer</button>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const startBtn = document.getElementById('startBtn');
+      const restartBtn = document.getElementById('restartBtn');
+      const sliderContainer = document.getElementById('sliderContainer');
+      const verticalSlider = document.getElementById('verticalSlider');
+      const info = document.getElementById('info');
+
+      const playerEmoji = '👩‍🦰';
+      const obstacleEmojis = ['🚜', '🐄', '🐓', '🧑‍🌾', '🥩', '🛠️', '🛁', '🏍️', '🛢️'];
+      let obstacles = [];
+      let lives = 3;
+      let timer = 40;
+      let gameRunning = false;
+      let gameOver = false;
+      let gameLoopId;
+      let obstacleInterval, timerInterval;
+
+      // Difficulte accrue
+      const obstacleSpeed = 7;       // plus rapide
+      const spawnIntervalMs = 600;   // plus fréquent
+
+      const player = {
+        x: 80,
+        y: 300,
+        size: 40,
+      };
+
+      function drawPlayer() {
+        ctx.font = `${player.size}px Arial`;
+        ctx.textBaseline = "top";
+        ctx.fillText(playerEmoji, player.x, player.y);
+      }
+
+      function drawObstacles() {
+        ctx.font = "32px Arial";
+        for (let obs of obstacles) {
+          ctx.fillText(obs.emoji, obs.x, obs.y);
+          obs.x -= obstacleSpeed;
+        }
+        obstacles = obstacles.filter(obs => obs.x + 32 > 0);
+      }
+
+      function spawnObstacle() {
+        const emoji = obstacleEmojis[Math.floor(Math.random() * obstacleEmojis.length)];
+        const y = Math.random() * (canvas.height - 50);
+        obstacles.push({ x: canvas.width, y: y, emoji: emoji });
+      }
+
+      function detectCollision() {
+        for (let obs of obstacles) {
+          const dx = player.x - obs.x;
+          const dy = player.y - obs.y;
+          if (Math.abs(dx) < 32 && Math.abs(dy) < 32) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function drawHUD() {
+        ctx.fillStyle = 'black';
+        ctx.font = '18px Arial';
+        ctx.fillText(`Vies : ${lives}`, 10, 25);
+        ctx.fillText(`Temps : ${timer}s`, canvas.width - 110, 25);
+      }
+
+      // Fonction pour dessiner un rectangle arrondi
+      function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+        if (typeof stroke === 'undefined') stroke = true;
+        if (typeof radius === 'undefined') radius = 5;
+        if (typeof radius === 'number') radius = { tl: radius, tr: radius, br: radius, bl: radius };
+        else {
+          const defaultRadius = { tl: 0, tr: 0, br: 0, bl: 0 };
+          for (const side in defaultRadius) {
+            radius[side] = radius[side] || defaultRadius[side];
+          }
+        }
+        ctx.beginPath();
+        ctx.moveTo(x + radius.tl, y);
+        ctx.lineTo(x + width - radius.tr, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+        ctx.lineTo(x + width, y + height - radius.br);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+        ctx.lineTo(x + radius.bl, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+        ctx.lineTo(x, y + radius.tl);
+        ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+        ctx.closePath();
+        if (fill) ctx.fill();
+        if (stroke) ctx.stroke();
+      }
+
+      // Wrap text en plusieurs lignes
+      function wrapText(text, maxWidthPx) {
+        const words = text.split(' ');
+        let lines = [];
+        let currentLine = '';
+
+        for (const word of words) {
+          const testLine = currentLine + (currentLine === '' ? '' : ' ') + word;
+          const testWidth = ctx.measureText(testLine).width;
+          if (testWidth > maxWidthPx && currentLine !== '') {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine !== '') lines.push(currentLine);
+        return lines;
+      }
+
+      function drawEndMessage(message) {
+        const padding = 30;
+        const width = canvas.width * 0.75;
+        const height = 220;
+        const x = (canvas.width - width) / 2;
+        const y = (canvas.height - height) / 2;
+
+        // Fond sombre transparent
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Cadre blanc arrondi
+        ctx.fillStyle = '#fff';
+        roundRect(ctx, x, y, width, height, 25, true, false);
+
+        // Texte
+        ctx.fillStyle = '#111';
+        ctx.font = '22px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const maxTextWidth = width - 2 * padding;
+        const lines = wrapText(message, maxTextWidth);
+
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], x + padding, y + padding + i * 30);
+        }
+      }
+
+      function updateGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawObstacles();
+        drawHUD();
+
+        if (detectCollision()) {
+          lives--;
+          obstacles = [];
+          if (lives <= 0) {
+            gameOver = true;
+            gameRunning = false;
+            clearInterval(obstacleInterval);
+            clearInterval(timerInterval);
+            drawEndMessage("Tu as perdu ! Tu deviens un misérable paysan nivernais\n\nRecommencez pour une autre chance !");
+            restartBtn.style.display = 'block';
+          }
+        }
+        if (timer <= 0) {
+          gameOver = true;
+          gameRunning = false;
+          clearInterval(obstacleInterval);
+          clearInterval(timerInterval);
+          drawEndMessage("Félicitations ! Tu as gagné ! Te voilà promu bobo écolo socialo");
+          restartBtn.style.display = 'block';
+        }
+        if (gameRunning) {
+          gameLoopId = requestAnimationFrame(updateGame);
+        }
+      }
+
+      function startGame() {
+        lives = 3;
+        timer = 40;
+        obstacles = [];
+        gameRunning = true;
+        gameOver = false;
+        restartBtn.style.display = 'none';
+        startBtn.style.display = 'none';
+        canvas.style.display = 'block';
+        sliderContainer.style.display = 'block';
+        info.textContent = "Déplacez le curseur vertical pour monter ou descendre Mazarine !";
+
+        verticalSlider.value = player.y;
+        player.y = Number(verticalSlider.value);
+
+        obstacleInterval = setInterval(spawnObstacle, spawnIntervalMs);
+        timerInterval = setInterval(() => {
+          timer--;
+        }, 1000);
+
+        updateGame();
+      }
+
+      // Controler le joueur via le slider vertical
+      verticalSlider.addEventListener('input', () => {
+        player.y = Number(verticalSlider.value);
+        if (player.y < 0) player.y = 0;
+        if (player.y > canvas.height - player.size) player.y = canvas.height - player.size;
+      });
+
+      startBtn.addEventListener('click', startGame);
+
+      restartBtn.addEventListener('click', () => {
+        startGame();
+      });
+
+      // Pour une meilleure interaction tactile
+      verticalSlider.addEventListener('touchstart', e => e.preventDefault());
+
+    });
+  </script>
+</body>
+</html>
